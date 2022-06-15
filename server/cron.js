@@ -1,3 +1,4 @@
+require('dotenv').config();
 const cron = require('node-cron');
 const fs = require('fs').promises;
 const path = require('path');
@@ -10,7 +11,7 @@ const saveKeys = () =>
   import('node-fetch')
     .then(({ default: fetch }) =>
       fetch(
-        `https://login.microsoftonline.com/894e76be-7471-4267-8adc-db9395395ea1/discovery/v2.0/keys`,
+        `https://login.microsoftonline.com/${process.env.TENANT_ID}/discovery/v2.0/keys`,
         {
           method: 'GET',
         }

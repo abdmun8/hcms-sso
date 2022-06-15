@@ -1,16 +1,9 @@
-// import express from 'express';
-// import { msalConfig } from './authConfig';
-// import { verify } from 'jsonwebtoken';
+require('dotenv').config();
 const express = require('express');
 const { decode, verify } = require('jsonwebtoken');
 const fs = require('fs').promises;
 const path = require('path');
-const saveKeys = require('./Cron');
-
-const config = {
-  tenantId: '894e76be-7471-4267-8adc-db9395395ea1',
-  clientId: '49a86171-bbec-449b-bf4d-8813b48b2285',
-}
+const saveKeys = require('./cron');
 
 const app = express();
 app.use(express.json());
@@ -26,12 +19,12 @@ app.post('/me', async (req, res) => {
 
   try {
     const { idToken } = req.body;
-    console.log({ idToken });
     console.log(`${new Date()} --------------------\nverifying token`);
     const { kid, alg, ...rest } = decode(idToken, { complete: true }).header;
-    const dc = decode(idToken, { complete: true });
-    console.log({dc})
+    const decoded = decode(idToken, { complete: true });
     if (alg === 'none') throw 'invalid encryption algorithm';
+
+    // read key.json if exist
     const text = await fs
       .readFile(path.join(__dirname, 'key.json'), 'utf8')
       .catch((err) => {
@@ -44,12 +37,14 @@ app.post('/me', async (req, res) => {
       if (
         key.kid !== kid ||
         key.issuer !==
-          `https://login.microsoftonline.com/894e76be-7471-4267-8adc-db9395395ea1/v2.0`
+          `https://login.microsoftonline.com/${process.env.TENANT_ID}/v2.0`
       )
         continue;
       cert = key.x5c[0];
       break;
     }
+
+    // get new key from microsoft
     if (!cert) {
       text = await saveKeys().then((x) =>
         fs.readFile(path.join(__dirname, 'key.json'), 'utf8')
@@ -58,7 +53,7 @@ app.post('/me', async (req, res) => {
         if (
           key.kid !== kid ||
           key.issuer !==
-            `https://login.microsoftonline.com/894e76be-7471-4267-8adc-db9395395ea1/v2.0`
+            `https://login.microsoftonline.com/${process.env.TENANT_ID}/v2.0`
         )
           continue;
         cert = key.x5c[0];
@@ -66,28 +61,24 @@ app.post('/me', async (req, res) => {
       }
       if (!cert) throw 'no matching cert for:\n' + idToken;
     }
-
-    console.log({cert})
-
-    const { aud, iss, email, name } = verify(
+    const { aud, iss } = verify(
       idToken,
       `-----BEGIN CERTIFICATE-----\n${cert}\n-----END CERTIFICATE-----`,
       { algorithms: [alg] }
     );
     if (
-      aud !== '49a86171-bbec-449b-bf4d-8813b48b2285' ||
-      iss !== `https://login.microsoftonline.com/894e76be-7471-4267-8adc-db9395395ea1/v2.0`
+      aud !== process.env.APPLICATION_ID ||
+      iss !== `https://login.microsoftonline.com/${process.env.TENANT_ID}/v2.0`
     ) {
       throw 'invalid aud or iss';
     }
-    res.json({ data: {email, name, iss, aud}, success: true });
-    // continue with business logic...
+    // continue business logic
+
+    res.json({ success: true, data: decoded });
   } catch (err) {
-    res.json({ data: 'error',  success: false });
+    res.json({ data: err.toString(), success: false });
     // catch the error in whatever way you like
   }
-
-
 });
 
 app.listen(port, () => {
